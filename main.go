@@ -194,7 +194,6 @@ func formatFileSize(bytes int64) string {
 
 // Convert recording to Stremio meta
 func recordingToMeta(rec Recording) StremioMeta {
-	duration := formatDuration(rec.DurationSeconds)
 	size := formatFileSize(rec.FileSizeBytes)
 
 	var date string
@@ -204,25 +203,44 @@ func recordingToMeta(rec Recording) StremioMeta {
 		}
 	}
 
-	details := []string{}
-	if duration != "" {
-		details = append(details, duration)
-	}
-	if size != "" {
-		details = append(details, size)
-	}
-	if date != "" {
-		details = append(details, date)
-	}
-
-	description := fmt.Sprintf("Status: %s", rec.Status)
-	if len(details) > 0 {
-		description += "\n" + strings.Join(details, " | ")
-	}
-
 	name := rec.Name
 	if name == "" {
 		name = "Unknown Recording"
+	}
+
+	var description string
+	var runtime string
+
+	// Handle active recordings differently
+	if rec.IsActive && rec.Status == "recording" {
+		elapsed := formatDuration(rec.ElapsedSeconds)
+		name = "🔴 " + name
+		description = "Recording in progress..."
+		if elapsed != "" {
+			description += fmt.Sprintf("\nElapsed: %s", elapsed)
+		}
+		if size != "" {
+			description += fmt.Sprintf(" | Size: %s", size)
+		}
+		runtime = elapsed
+	} else {
+		duration := formatDuration(rec.DurationSeconds)
+		details := []string{}
+		if duration != "" {
+			details = append(details, duration)
+		}
+		if size != "" {
+			details = append(details, size)
+		}
+		if date != "" {
+			details = append(details, date)
+		}
+
+		description = fmt.Sprintf("Status: %s", rec.Status)
+		if len(details) > 0 {
+			description += "\n" + strings.Join(details, " | ")
+		}
+		runtime = duration
 	}
 
 	return StremioMeta{
@@ -231,7 +249,7 @@ func recordingToMeta(rec Recording) StremioMeta {
 		Name:        name,
 		Description: description,
 		ReleaseInfo: date,
-		Runtime:     duration,
+		Runtime:     runtime,
 	}
 }
 
@@ -272,26 +290,40 @@ func handleCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Filter valid recordings
-	var valid []Recording
+	// Separate active and completed recordings
+	var active []Recording
+	var completed []Recording
 	for _, rec := range recordings {
-		hasValidFile := rec.FileSizeBytes > 0
-		isFinished := rec.Status == "completed" || rec.Status == "stopped" || rec.Status == "failed"
-		if isFinished && hasValidFile && !rec.IsActive {
-			// Apply search filter if present
-			if searchQuery != "" {
-				if !strings.Contains(strings.ToLower(rec.Name), searchQuery) {
-					continue
-				}
+		// Apply search filter if present
+		if searchQuery != "" {
+			if !strings.Contains(strings.ToLower(rec.Name), searchQuery) {
+				continue
 			}
-			valid = append(valid, rec)
+		}
+
+		if rec.IsActive && rec.Status == "recording" {
+			active = append(active, rec)
+		} else {
+			hasValidFile := rec.FileSizeBytes > 0
+			isFinished := rec.Status == "completed" || rec.Status == "stopped" || rec.Status == "failed"
+			if isFinished && hasValidFile {
+				completed = append(completed, rec)
+			}
 		}
 	}
 
-	// Sort by date (newest first)
-	sort.Slice(valid, func(i, j int) bool {
-		return valid[i].StartedAt > valid[j].StartedAt
+	// Sort active by start time (newest first)
+	sort.Slice(active, func(i, j int) bool {
+		return active[i].StartedAt > active[j].StartedAt
 	})
+
+	// Sort completed by date (newest first)
+	sort.Slice(completed, func(i, j int) bool {
+		return completed[i].StartedAt > completed[j].StartedAt
+	})
+
+	// Combine: active first, then completed
+	valid := append(active, completed...)
 
 	metas := make([]StremioMeta, len(valid))
 	for i, rec := range valid {
@@ -347,17 +379,35 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 		params.Set("api_password", easyProxyPassword)
 	}
 
-	streamURL := fmt.Sprintf("%s/api/recordings/%s/stream?%s", easyProxyURL, recordingID, params.Encode())
-	deleteURL := fmt.Sprintf("%s/api/recordings/%s/delete?%s", easyProxyURL, recordingID, params.Encode())
+	// Check if recording is active
+	recordings, err := fetchRecordings()
+	var isActive bool
+	if err == nil {
+		for _, rec := range recordings {
+			if rec.ID == recordingID && rec.IsActive && rec.Status == "recording" {
+				isActive = true
+				break
+			}
+		}
+	}
 
-	log.Printf("[DVR] Stream request for recording: %s", recordingID)
+	log.Printf("[DVR] Stream request for recording: %s (active: %v)", recordingID, isActive)
 
-	jsonResponse(w, map[string][]StremioStream{
-		"streams": {
-			{URL: streamURL, Title: "Play Recording"},
-			{URL: deleteURL, Title: "🗑️ Delete Recording"},
-		},
-	})
+	var streams []StremioStream
+
+	if isActive {
+		// Active recording: offer Stop & Watch
+		stopURL := fmt.Sprintf("%s/record/stop/%s?%s", easyProxyURL, recordingID, params.Encode())
+		streams = append(streams, StremioStream{URL: stopURL, Title: "⏹️ Stop & Watch"})
+	} else {
+		// Completed recording: offer Play and Delete
+		streamURL := fmt.Sprintf("%s/api/recordings/%s/stream?%s", easyProxyURL, recordingID, params.Encode())
+		deleteURL := fmt.Sprintf("%s/api/recordings/%s/delete?%s", easyProxyURL, recordingID, params.Encode())
+		streams = append(streams, StremioStream{URL: streamURL, Title: "▶️ Play Recording"})
+		streams = append(streams, StremioStream{URL: deleteURL, Title: "🗑️ Delete Recording"})
+	}
+
+	jsonResponse(w, map[string][]StremioStream{"streams": streams})
 }
 
 // Handler: Homepage
