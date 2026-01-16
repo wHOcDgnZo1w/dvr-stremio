@@ -360,7 +360,145 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Handler: Homepage
+func handleHome(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Get the host from the request to build the manifest URL
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	host := r.Host
+	manifestURL := fmt.Sprintf("%s://%s/manifest.json", scheme, host)
+	stremioURL := fmt.Sprintf("stremio://%s/manifest.json", host)
+
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DVR Recordings - Stremio Addon</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%%, #16213e 100%%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+            max-width: 500px;
+        }
+        .icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+        .subtitle {
+            color: #8892b0;
+            margin-bottom: 2rem;
+            font-size: 1.1rem;
+        }
+        .install-btn {
+            display: inline-block;
+            background: #7b2cbf;
+            color: #fff;
+            padding: 1rem 2.5rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-size: 1.1rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(123, 44, 191, 0.4);
+        }
+        .install-btn:hover {
+            background: #9d4edd;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(123, 44, 191, 0.5);
+        }
+        .manual {
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #2a2a4a;
+        }
+        .manual p {
+            color: #8892b0;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+        .manifest-url {
+            background: #0d1117;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #58a6ff;
+            word-break: break-all;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .manifest-url:hover {
+            background: #161b22;
+        }
+        .features {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin: 2rem 0;
+            flex-wrap: wrap;
+        }
+        .feature {
+            color: #8892b0;
+            font-size: 0.9rem;
+        }
+        .feature span {
+            display: block;
+            font-size: 1.5rem;
+            margin-bottom: 0.25rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">📼</div>
+        <h1>DVR Recordings</h1>
+        <p class="subtitle">Access your EasyProxy DVR recordings in Stremio</p>
+
+        <div class="features">
+            <div class="feature"><span>📺</span>Browse</div>
+            <div class="feature"><span>🔍</span>Search</div>
+            <div class="feature"><span>▶️</span>Play</div>
+        </div>
+
+        <a href="%s" class="install-btn">Install Addon</a>
+
+        <div class="manual">
+            <p>Or copy the manifest URL:</p>
+            <div class="manifest-url" onclick="navigator.clipboard.writeText('%s')">%s</div>
+        </div>
+    </div>
+</body>
+</html>`, stremioURL, manifestURL, manifestURL)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(html))
+}
+
 func main() {
+	http.HandleFunc("/", handleHome)
 	http.HandleFunc("/manifest.json", corsMiddleware(handleManifest))
 	http.HandleFunc("/catalog/", corsMiddleware(handleCatalog))
 	http.HandleFunc("/meta/", corsMiddleware(handleMeta))
