@@ -1,0 +1,5 @@
+dvr-stremio
+*.exe
+*.dll
+*.so
+*.dylib
