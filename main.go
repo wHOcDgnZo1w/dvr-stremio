@@ -121,6 +121,15 @@ func jsonResponse(w http.ResponseWriter, data interface{}) {
 	json.NewEncoder(w).Encode(data)
 }
 
+// JSON response with no-cache headers (for dynamic content)
+func jsonResponseNoCache(w http.ResponseWriter, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	json.NewEncoder(w).Encode(data)
+}
+
 // Fetch recordings from EasyProxy
 func fetchRecordings() ([]Recording, error) {
 	params := url.Values{}
@@ -331,7 +340,7 @@ func handleCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("[DVR] Returning %d recordings", len(metas))
-	jsonResponse(w, map[string][]StremioMeta{"metas": metas})
+	jsonResponseNoCache(w, map[string][]StremioMeta{"metas": metas})
 }
 
 // Handler: Meta
@@ -407,7 +416,7 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 		streams = append(streams, StremioStream{URL: deleteURL, Title: "🗑️ Delete Recording"})
 	}
 
-	jsonResponse(w, map[string][]StremioStream{"streams": streams})
+	jsonResponseNoCache(w, map[string][]StremioStream{"streams": streams})
 }
 
 // Handler: Homepage
