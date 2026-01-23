@@ -405,9 +405,12 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 	var streams []StremioStream
 
 	if isActive {
-		// Active recording: offer Stop & Watch
+		// Active recording: offer Watch (without stopping) and Stop & Watch
+		streamURL := fmt.Sprintf("%s/api/recordings/%s/stream?%s", easyProxyURL, recordingID, params.Encode())
+		streams = append(streams, StremioStream{URL: streamURL, Title: "▶️ Watch Recording"})
+
 		stopURL := fmt.Sprintf("%s/record/stop/%s?%s", easyProxyURL, recordingID, params.Encode())
-		streams = append(streams, StremioStream{URL: stopURL, Title: "⏹️ Stop & Watch"})
+		streams = append(streams, StremioStream{URL: stopURL, Title: "⏹️ Stop Recording & Watch"})
 	} else {
 		// Completed recording: offer Play and Delete
 		streamURL := fmt.Sprintf("%s/api/recordings/%s/stream?%s", easyProxyURL, recordingID, params.Encode())
